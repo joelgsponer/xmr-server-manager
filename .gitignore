@@ -1,0 +1,49 @@
+# Binaries
+*.exe
+xmr-manager
+xmr-manager-*
+dist/
+
+# Go build artifacts
+*.o
+*.a
+*.so
+
+# Environment files with credentials
+.env
+.env.*
+!.env.example
+
+# Server configurations (contain IPs)
+servers.*.json
+!servers.example.json
+
+# Backup files
+*.backup
+*.backup-*
+
+# Log files
+logs/*.log
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude settings
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test
+*.out
+
+# Temporary files
+*.tmp
+*.temp
