@@ -80,6 +80,11 @@ Just run the application and it will prompt you for credentials:
 
 # Use a custom config file
 ./xmr-manager -config /path/to/custom.env
+
+# Backup operations (see Backup Management section)
+./xmr-manager -backup
+./xmr-manager -list-backups
+./xmr-manager -restore servers.test.json.backup-20240128-150405
 ```
 
 ### 4. Access the Web Interface
@@ -137,6 +142,73 @@ Log entries include:
 - Environment (TEST/PROD)
 - Log level (INFO/WARNING/ERROR/SUCCESS)
 - Operation details
+
+### Backup Management
+
+The application includes a comprehensive backup system for server configurations:
+
+#### Automatic Backups
+- Backups are created automatically before any configuration change
+- Default retention: 10 most recent backups (configurable)
+- Old backups are automatically cleaned up
+
+#### Manual Backup Commands
+
+1. **Create a backup**:
+   ```bash
+   ./xmr-manager -backup
+   # Creates: servers.test.json.backup-20240128-150405
+   ```
+
+2. **List available backups**:
+   ```bash
+   ./xmr-manager -list-backups
+   
+   # Output:
+   # Available backups for test environment:
+   # --------------------------------------------------------------------------------
+   #  1. servers.test.json.backup-20240128-150405
+   #     Size: 1234 bytes | Modified: 2024-01-28 15:04:05
+   #     Status: KEPT (within retention limit)
+   # 
+   # Retention policy: Keep 10 most recent backups
+   # Backup directory: .
+   ```
+
+3. **Restore from backup**:
+   ```bash
+   ./xmr-manager -restore servers.test.json.backup-20240128-150405
+   ```
+
+#### Backup Options
+
+- **Custom backup directory**:
+  ```bash
+  ./xmr-manager -backup-dir /path/to/backups
+  ```
+
+- **Change retention policy**:
+  ```bash
+  # Keep 20 backups
+  ./xmr-manager -keep-backups 20
+  
+  # Keep unlimited backups
+  ./xmr-manager -keep-backups 0
+  ```
+
+- **Environment-specific operations**:
+  ```bash
+  # Backup production configuration
+  ./xmr-manager -env production -backup
+  
+  # List production backups
+  ./xmr-manager -env production -list-backups
+  ```
+
+#### Backup Files
+- Format: `servers.{env}.json.backup-{timestamp}`
+- Location: Same directory as config file (or custom backup directory)
+- Content: Complete server configuration including all DNS record details
 
 ## Building from Source
 

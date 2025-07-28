@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ import (
 
 // Version information
 var (
-	Version   = "1.0.0"
+	Version   = "1.1.0"
 	BuildTime = "dev"
 )
 
@@ -97,6 +98,13 @@ var (
 	port        = flag.Int("port", 9876, "Port to run the server on")
 	configFile  = flag.String("config", "", "Path to custom env file")
 	noBrowser   = flag.Bool("no-browser", false, "Don't open browser automatically")
+	
+	// Backup related flags
+	backup      = flag.Bool("backup", false, "Create a backup of the current configuration")
+	restore     = flag.String("restore", "", "Restore configuration from a backup file")
+	listBackups = flag.Bool("list-backups", false, "List available backup files")
+	backupDir   = flag.String("backup-dir", "", "Directory to store backups (default: same as config)")
+	keepBackups = flag.Int("keep-backups", 10, "Number of backups to keep (0 = unlimited)")
 	
 	logger      *Logger
 	credentials *Credentials
@@ -714,15 +722,173 @@ func loadServerConfig(env string) (*ServerConfig, error) {
 	return &config, nil
 }
 
+// Backup management functions
+func getBackupDir(configFile string) string {
+	if *backupDir != "" {
+		return *backupDir
+	}
+	return filepath.Dir(configFile)
+}
+
+func getBackupFiles(env string) ([]string, error) {
+	configFile := fmt.Sprintf("servers.%s.json", env)
+	dir := getBackupDir(configFile)
+	pattern := fmt.Sprintf("%s.backup-*", filepath.Base(configFile))
+	
+	files, err := filepath.Glob(filepath.Join(dir, pattern))
+	if err != nil {
+		return nil, err
+	}
+	
+	// Sort by modification time (newest first)
+	sort.Slice(files, func(i, j int) bool {
+		fi, _ := os.Stat(files[i])
+		fj, _ := os.Stat(files[j])
+		return fi.ModTime().After(fj.ModTime())
+	})
+	
+	return files, nil
+}
+
+func cleanOldBackups(env string) error {
+	if *keepBackups <= 0 {
+		return nil // Unlimited backups
+	}
+	
+	backups, err := getBackupFiles(env)
+	if err != nil {
+		return err
+	}
+	
+	if len(backups) <= *keepBackups {
+		return nil
+	}
+	
+	// Remove old backups
+	for i := *keepBackups; i < len(backups); i++ {
+		if err := os.Remove(backups[i]); err != nil {
+			logger.Log("ERROR", fmt.Sprintf("Failed to remove old backup %s: %v", backups[i], err))
+		} else {
+			logger.Log("INFO", fmt.Sprintf("Removed old backup: %s", filepath.Base(backups[i])))
+		}
+	}
+	
+	return nil
+}
+
+func createBackup(env string) (string, error) {
+	configFile := fmt.Sprintf("servers.%s.json", env)
+	
+	// Check if config exists
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("no configuration file to backup: %s", configFile)
+		}
+		return "", err
+	}
+	
+	// Create backup filename
+	dir := getBackupDir(configFile)
+	backupFile := filepath.Join(dir, fmt.Sprintf("%s.backup-%s", filepath.Base(configFile), time.Now().Format("20060102-150405")))
+	
+	// Ensure backup directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	
+	// Write backup
+	if err := os.WriteFile(backupFile, data, 0644); err != nil {
+		return "", err
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Backup created: %s", backupFile))
+	
+	// Clean old backups
+	cleanOldBackups(env)
+	
+	return backupFile, nil
+}
+
+func restoreBackup(backupFile string, env string) error {
+	// Read backup file
+	data, err := os.ReadFile(backupFile)
+	if err != nil {
+		return fmt.Errorf("failed to read backup file: %v", err)
+	}
+	
+	// Validate it's valid JSON
+	var config ServerConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("invalid backup file format: %v", err)
+	}
+	
+	// Create a backup of current config before restoring
+	configFile := fmt.Sprintf("servers.%s.json", env)
+	if _, err := os.Stat(configFile); err == nil {
+		if _, err := createBackup(env); err != nil {
+			logger.Log("WARNING", fmt.Sprintf("Failed to backup current config: %v", err))
+		}
+	}
+	
+	// Restore the backup
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to restore backup: %v", err)
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Configuration restored from %s", backupFile))
+	return nil
+}
+
+func listBackupFiles(env string) error {
+	backups, err := getBackupFiles(env)
+	if err != nil {
+		return err
+	}
+	
+	if len(backups) == 0 {
+		fmt.Printf("No backups found for %s environment\n", env)
+		return nil
+	}
+	
+	fmt.Printf("\nAvailable backups for %s environment:\n", env)
+	fmt.Println(strings.Repeat("-", 80))
+	
+	for i, backup := range backups {
+		info, err := os.Stat(backup)
+		if err != nil {
+			continue
+		}
+		
+		// Extract timestamp from filename
+		base := filepath.Base(backup)
+		
+		fmt.Printf("%2d. %s\n", i+1, base)
+		fmt.Printf("    Size: %d bytes | Modified: %s\n", 
+			info.Size(), 
+			info.ModTime().Format("2006-01-02 15:04:05"))
+		
+		if i < *keepBackups {
+			fmt.Printf("    Status: KEPT (within retention limit)\n")
+		} else {
+			fmt.Printf("    Status: TO BE REMOVED (exceeds retention limit)\n")
+		}
+		fmt.Println()
+	}
+	
+	fmt.Printf("Retention policy: Keep %d most recent backups\n", *keepBackups)
+	fmt.Printf("Backup directory: %s\n", getBackupDir(fmt.Sprintf("servers.%s.json", env)))
+	
+	return nil
+}
+
 func saveServerConfig(env string, config *ServerConfig) error {
 	configFile := fmt.Sprintf("servers.%s.json", env)
 	
-	// Create backup
+	// Create backup if file exists
 	if _, err := os.Stat(configFile); err == nil {
-		backupFile := fmt.Sprintf("%s.backup-%s", configFile, time.Now().Format("20060102-150405"))
-		if data, err := os.ReadFile(configFile); err == nil {
-			os.WriteFile(backupFile, data, 0644)
-			logger.Log("INFO", fmt.Sprintf("Backup created: %s", backupFile))
+		if _, err := createBackup(env); err != nil {
+			logger.Log("WARNING", fmt.Sprintf("Failed to create backup: %v", err))
 		}
 	}
 	
@@ -1082,6 +1248,34 @@ func main() {
 	logger.Log("INFO", fmt.Sprintf("Starting XMR Server Manager v%s (built: %s)", Version, BuildTime))
 	logger.Log("INFO", fmt.Sprintf("Environment: %s", *environment))
 	logger.Log("INFO", fmt.Sprintf("Platform: %s/%s", runtime.GOOS, runtime.GOARCH))
+	
+	// Handle backup-related commands first
+	if *listBackups {
+		if err := listBackupFiles(*environment); err != nil {
+			logger.Log("ERROR", fmt.Sprintf("Failed to list backups: %v", err))
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	
+	if *backup {
+		backupFile, err := createBackup(*environment)
+		if err != nil {
+			logger.Log("ERROR", fmt.Sprintf("Failed to create backup: %v", err))
+			os.Exit(1)
+		}
+		fmt.Printf("Backup created: %s\n", backupFile)
+		os.Exit(0)
+	}
+	
+	if *restore != "" {
+		if err := restoreBackup(*restore, *environment); err != nil {
+			logger.Log("ERROR", fmt.Sprintf("Failed to restore backup: %v", err))
+			os.Exit(1)
+		}
+		fmt.Printf("Configuration restored from: %s\n", *restore)
+		os.Exit(0)
+	}
 	
 	// Get credentials
 	credentials, err = getCredentials(*environment)
