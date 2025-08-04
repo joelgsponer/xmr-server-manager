@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/federerj/Documents/qubic/xmr-server-manager/logs/.f5986bda435ffd5b2412c053e4ad9178bad25652-audit.json",
+    "files": [
+        {
+            "date": 1753711327136,
+            "name": "/Users/federerj/Documents/qubic/xmr-server-manager/logs/mcp-puppeteer-2025-07-28.log",
+            "hash": "5235d4a4391ccdaa47791c67d97af5c8a91a50d09400bb34ebdb79b2d72e785c"
+        },
+        {
+            "date": 1754320637696,
+            "name": "/Users/federerj/Documents/qubic/xmr-server-manager/logs/mcp-puppeteer-2025-08-04.log",
+            "hash": "6e32bfb10b5dc5aaa2978853eb248c7a62e59c53454c3bfb93188d235b7e1d22"
+        }
+    ],
+    "hashType": "sha256"
+}

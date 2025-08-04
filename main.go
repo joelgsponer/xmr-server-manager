@@ -184,29 +184,97 @@ const indexHTML = `<!DOCTYPE html>
             margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        table {
-            width: 100%;
+        .server-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .server-card {
             background-color: white;
-            border-radius: 5px;
-            overflow: hidden;
+            border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            transition: box-shadow 0.3s ease;
         }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
+        .server-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
-        th {
-            background-color: #f8f9fa;
+        .server-card.active {
+            border: 2px solid {{if eq .Environment "production"}}#dc3545{{else}}#fd7e14{{end}};
+        }
+        .server-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .server-name {
+            font-size: 18px;
             font-weight: bold;
+            color: #333;
         }
-        tr:hover {
-            background-color: #f5f5f5;
+        .server-ip {
+            font-size: 14px;
+            color: #666;
+            font-weight: normal;
+            margin-top: 2px;
         }
-        .checkbox {
-            width: 20px;
-            height: 20px;
+        .server-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .entries-table {
+            width: 100%;
+            font-size: 14px;
+        }
+        .entries-table th {
+            text-align: left;
+            padding: 8px 5px;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .entries-table td {
+            padding: 8px 5px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .entries-table tr:last-child td {
+            border-bottom: none;
+        }
+        .entry-checkbox {
+            width: 18px;
+            height: 18px;
             cursor: pointer;
+        }
+        .proxy-badge {
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .proxy-on {
+            background-color: #fff3e0;
+            color: #e65100;
+        }
+        .proxy-off {
+            background-color: #f5f5f5;
+            color: #666;
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-active {
+            background-color: #4caf50;
+        }
+        .status-inactive {
+            background-color: #ccc;
         }
         .button {
             background-color: {{if eq .Environment "production"}}#dc3545{{else}}#fd7e14{{end}};
@@ -262,6 +330,13 @@ const indexHTML = `<!DOCTYPE html>
             font-size: 12px;
             margin: 2px 0;
         }
+        .server-meta {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #f0f0f0;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -271,59 +346,66 @@ const indexHTML = `<!DOCTYPE html>
     </div>
     
     <div class="info">
-        <strong>Total Servers:</strong> {{len .Servers}} | 
-        <strong>Active:</strong> {{.ActiveCount}} | 
-        <strong>Inactive:</strong> {{.InactiveCount}} |
+        <strong>Total Servers:</strong> {{.TotalServers}} | 
+        <strong>Active Entries:</strong> {{.ActiveCount}} | 
+        <strong>Inactive Entries:</strong> {{.InactiveCount}} |
         <strong>Last Updated:</strong> <span id="lastUpdate">{{.LastUpdate}}</span>
     </div>
     
     <form id="serverForm" onsubmit="updateServers(event)">
-        <table>
-            <thead>
-                <tr>
-                    <th>Alias</th>
-                    <th>IP Address</th>
-                    <th>Description</th>
-                    <th>TTL</th>
-                    <th>Proxy</th>
-                    <th>Status</th>
-                    <th>Active</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .Servers}}
-                <tr>
-                    <td><strong>{{.Server.Alias}}</strong></td>
-                    <td>{{.Server.Content}}</td>
-                    <td>{{.Server.Description}}</td>
-                    <td>{{.Server.TTL}}s</td>
-                    <td>
-                        {{if .Server.Proxied}}
-                            <span style="color: orange;" title="Proxied through Cloudflare">🛡️ On</span>
-                        {{else}}
-                            <span style="color: gray;" title="DNS only">☁️ Off</span>
+        <div class="server-grid">
+            {{range .ServerGroups}}
+            <div class="server-card {{if .HasActiveEntries}}active{{end}}">
+                <div class="server-header">
+                    <div>
+                        <div class="server-name">{{.Names}}</div>
+                        <div class="server-ip">{{.IP}}</div>
+                    </div>
+                    <div class="server-status">
+                        <span class="status-indicator {{if .HasActiveEntries}}status-active{{else}}status-inactive{{end}}"></span>
+                        <span>{{if .HasActiveEntries}}Active{{else}}Inactive{{end}}</span>
+                    </div>
+                </div>
+                
+                <table class="entries-table">
+                    <thead>
+                        <tr>
+                            <th>DNS Name</th>
+                            <th>Proxy</th>
+                            <th>TTL</th>
+                            <th>Active</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Entries}}
+                        <tr>
+                            <td>{{.Name}}</td>
+                            <td>
+                                {{if .Proxied}}
+                                    <span class="proxy-badge proxy-on">Proxied</span>
+                                {{else}}
+                                    <span class="proxy-badge proxy-off">DNS only</span>
+                                {{end}}
+                            </td>
+                            <td>{{.TTL}}s</td>
+                            <td>
+                                <input type="checkbox" class="entry-checkbox" 
+                                       name="active" 
+                                       value="{{$.IP}}-{{.Name}}" 
+                                       data-ip="{{$.IP}}"
+                                       data-name="{{.Name}}"
+                                       data-alias="{{.Alias}}"
+                                       data-proxied="{{.Proxied}}"
+                                       data-ttl="{{.TTL}}"
+                                       {{if .IsActive}}checked{{end}}>
+                            </td>
+                        </tr>
                         {{end}}
-                    </td>
-                    <td>
-                        {{if .IsActive}}
-                            <span style="color: green;">● Active</span>
-                        {{else}}
-                            <span style="color: gray;">○ Inactive</span>
-                        {{end}}
-                    </td>
-                    <td>
-                        <input type="checkbox" class="checkbox" 
-                               name="active" 
-                               value="{{.Server.Content}}" 
-                               data-alias="{{.Server.Alias}}"
-                               data-proxied="{{.Server.Proxied}}"
-                               data-ttl="{{.Server.TTL}}"
-                               {{if .IsActive}}checked{{end}}>
-                    </td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
+                    </tbody>
+                </table>
+            </div>
+            {{end}}
+        </div>
         
         <button type="submit" class="button" {{if eq .Environment "production"}}onclick="return confirmProduction()"{{end}}>
             Update DNS Records
@@ -360,16 +442,15 @@ const indexHTML = `<!DOCTYPE html>
             
             // Build request data with aliases, proxy status, and TTL
             const servers = [];
-            document.querySelectorAll('input[name="active"]').forEach(checkbox => {
-                if (activeIPs.includes(checkbox.value)) {
-                    servers.push({
-                        ip: checkbox.value,
-                        alias: checkbox.dataset.alias,
-                        proxied: checkbox.dataset.proxied === 'true',
-                        ttl: parseInt(checkbox.dataset.ttl) || 60,
-                        active: true
-                    });
-                }
+            document.querySelectorAll('input[name="active"]:checked').forEach(checkbox => {
+                servers.push({
+                    ip: checkbox.dataset.ip,
+                    name: checkbox.dataset.name,
+                    alias: checkbox.dataset.alias,
+                    proxied: checkbox.dataset.proxied === 'true',
+                    ttl: parseInt(checkbox.dataset.ttl) || 60,
+                    active: true
+                });
             });
             
             // Add log entry
@@ -459,12 +540,13 @@ func (c *CloudflareClient) makeRequest(method, endpoint string, body io.Reader) 
 }
 
 func (c *CloudflareClient) GetDNSRecords() ([]CloudflareRecord, error) {
-	req, err := c.makeRequest("GET", fmt.Sprintf("/dns_records?type=A&name=%s", c.credentials.Domain), nil)
+	// Get all A records that end with the domain (including subdomains like us.xmr)
+	req, err := c.makeRequest("GET", fmt.Sprintf("/dns_records?type=A&name~end=%s", c.credentials.Domain), nil)
 	if err != nil {
 		return nil, err
 	}
 	
-	logger.Log("INFO", fmt.Sprintf("Fetching DNS records for %s", c.credentials.Domain))
+	logger.Log("INFO", fmt.Sprintf("Fetching DNS records ending with %s", c.credentials.Domain))
 	
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -482,18 +564,34 @@ func (c *CloudflareClient) GetDNSRecords() ([]CloudflareRecord, error) {
 		return nil, fmt.Errorf("cloudflare API error: %v", cfResp.Errors)
 	}
 	
-	logger.Log("INFO", fmt.Sprintf("Found %d DNS records", len(cfResp.Result)))
-	return cfResp.Result, nil
+	// Filter to only include records ending with our domain
+	var filteredRecords []CloudflareRecord
+	for _, record := range cfResp.Result {
+		if strings.HasSuffix(record.Name, c.credentials.Domain) {
+			filteredRecords = append(filteredRecords, record)
+		}
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Found %d DNS records for domain %s", len(filteredRecords), c.credentials.Domain))
+	return filteredRecords, nil
 }
 
-func (c *CloudflareClient) CreateDNSRecord(ip, alias string, proxied bool, ttl int) (string, error) {
+func (c *CloudflareClient) CreateDNSRecord(ip, dnsName, alias string, proxied bool, ttl int) (string, error) {
 	if ttl <= 0 {
 		ttl = 60 // Default to 1 minute
 	}
 	
+	// Construct full DNS name
+	fullName := dnsName
+	if !strings.Contains(dnsName, ".") {
+		fullName = dnsName + "." + c.credentials.Domain
+	} else if !strings.HasSuffix(dnsName, c.credentials.Domain) {
+		fullName = dnsName + "." + c.credentials.Domain
+	}
+	
 	payload := map[string]interface{}{
 		"type":    "A",
-		"name":    c.credentials.Domain,
+		"name":    fullName,
 		"content": ip,
 		"ttl":     ttl,
 		"proxied": proxied,
@@ -999,37 +1097,132 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Prepare template data
-	type ServerDisplay struct {
-		Server   Server
+	type DNSEntry struct {
+		Name     string // The DNS name (e.g., "xmr", "us.xmr")
+		Alias    string // The descriptive alias from config
+		Proxied  bool
+		TTL      int
 		IsActive bool
 		RecordID string
 	}
 	
-	var servers []ServerDisplay
+	type ServerGroup struct {
+		IP               string
+		Names            string // Concatenated aliases separated by semicolon
+		Entries          []DNSEntry
+		HasActiveEntries bool
+	}
+	
+	// First, create a map of all known servers from config indexed by IP
+	configByIP := make(map[string]Server)
+	for _, server := range config.Servers {
+		configByIP[server.Content] = server
+	}
+	
+	// Group all DNS records by IP address
+	serverGroupsMap := make(map[string]*ServerGroup)
 	activeCount := 0
 	
-	for _, server := range config.Servers {
-		record, isActive := activeIPs[server.Content]
-		if isActive {
-			activeCount++
-			// Update server with latest info from Cloudflare
-			server.ID = record.ID
-			server.ModifiedOn = record.ModifiedOn
+	// Process all active DNS records from Cloudflare
+	for _, record := range records {
+		ip := record.Content
+		
+		// Get or create server group for this IP
+		if _, exists := serverGroupsMap[ip]; !exists {
+			serverGroupsMap[ip] = &ServerGroup{
+				IP:      ip,
+				Names:   "",
+				Entries: []DNSEntry{},
+			}
 		}
 		
-		servers = append(servers, ServerDisplay{
-			Server:   server,
-			IsActive: isActive,
+		// Extract the subdomain name (e.g., "xmr" from "xmr.domain.com" or "us.xmr" from "us.xmr.domain.com")
+		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+		
+		// Get alias from config if available
+		alias := record.Comment
+		if configServer, exists := configByIP[ip]; exists && configServer.Alias != "" {
+			alias = configServer.Alias
+		}
+		if alias == "" {
+			alias = dnsName
+		}
+		
+		entry := DNSEntry{
+			Name:     dnsName,
+			Alias:    alias,
+			Proxied:  record.Proxied,
+			TTL:      record.TTL,
+			IsActive: true,
 			RecordID: record.ID,
-		})
+		}
+		
+		serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
+		serverGroupsMap[ip].HasActiveEntries = true
+		activeCount++
+		
+		// Add alias to the group's name list
+		if serverGroupsMap[ip].Names == "" {
+			serverGroupsMap[ip].Names = alias
+		} else if !strings.Contains(serverGroupsMap[ip].Names, alias) {
+			serverGroupsMap[ip].Names += "; " + alias
+		}
 	}
+	
+	// Add inactive servers from config
+	for _, server := range config.Servers {
+		if _, isActive := activeIPs[server.Content]; !isActive {
+			ip := server.Content
+			
+			// Get or create server group
+			if _, exists := serverGroupsMap[ip]; !exists {
+				serverGroupsMap[ip] = &ServerGroup{
+					IP:      ip,
+					Names:   server.Alias,
+					Entries: []DNSEntry{},
+				}
+			}
+			
+			// Extract DNS name
+			dnsName := strings.TrimSuffix(server.Name, "."+credentials.Domain)
+			if dnsName == server.Name {
+				dnsName = "xmr" // Default if no domain match
+			}
+			
+			entry := DNSEntry{
+				Name:     dnsName,
+				Alias:    server.Alias,
+				Proxied:  server.Proxied,
+				TTL:      server.TTL,
+				IsActive: false,
+				RecordID: "",
+			}
+			
+			serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
+		}
+	}
+	
+	// Convert map to sorted slice
+	var serverGroups []ServerGroup
+	for _, group := range serverGroupsMap {
+		serverGroups = append(serverGroups, *group)
+	}
+	
+	// Sort server groups by IP address
+	sort.Slice(serverGroups, func(i, j int) bool {
+		return serverGroups[i].IP < serverGroups[j].IP
+	})
+	
+	// Count total unique servers (by IP)
+	totalServers := len(serverGroupsMap)
 	
 	data := map[string]interface{}{
 		"Environment":   *environment,
 		"Domain":        config.Domain,
-		"Servers":       servers,
+		"ServerGroups":  serverGroups,
+		"TotalServers":  totalServers,
 		"ActiveCount":   activeCount,
-		"InactiveCount": len(servers) - activeCount,
+		"InactiveCount": len(config.Servers) - activeCount,
 		"LastUpdate":    time.Now().Format("2006-01-02 15:04:05"),
 	}
 	
@@ -1045,6 +1238,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 type UpdateRequest struct {
 	ActiveServers []struct {
 		IP      string `json:"ip"`
+		Name    string `json:"name"`    // DNS name like "xmr" or "us.xmr"
 		Alias   string `json:"alias"`
 		Proxied bool   `json:"proxied"`
 		TTL     int    `json:"ttl"`
@@ -1085,77 +1279,108 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Build maps for comparison
-	currentRecords := make(map[string]CloudflareRecord)
+	// Build map of current records by key (name+ip)
+	type recordKey struct {
+		name string
+		ip   string
+	}
+	currentRecords := make(map[recordKey]CloudflareRecord)
 	for _, record := range records {
-		currentRecords[record.Content] = record
+		// Extract subdomain
+		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+		key := recordKey{name: dnsName, ip: record.Content}
+		currentRecords[key] = record
 	}
 	
-	type serverInfo struct {
+	// Build map of requested records
+	requestedRecords := make(map[recordKey]struct {
 		alias   string
 		proxied bool
 		ttl     int
-	}
-	requestedServers := make(map[string]serverInfo)
+	})
 	for _, server := range req.ActiveServers {
-		requestedServers[server.IP] = serverInfo{
+		key := recordKey{name: server.Name, ip: server.IP}
+		requestedRecords[key] = struct {
+			alias   string
+			proxied bool
+			ttl     int
+		}{
 			alias:   server.Alias,
 			proxied: server.Proxied,
 			ttl:     server.TTL,
 		}
 	}
 	
-	// Load server config to get all servers
+	// Load server config for updating timestamps
 	config, err := loadServerConfig(*environment)
-	if err != nil || config == nil {
-		response.Success = false
-		response.Message = "Failed to load server configuration"
-		json.NewEncoder(w).Encode(response)
-		return
+	if err != nil {
+		logger.Log("WARNING", fmt.Sprintf("Failed to load config for timestamp updates: %v", err))
+		// Create empty config if it doesn't exist
+		config = &ServerConfig{
+			Environment: *environment,
+			Domain:      credentials.Domain,
+			Servers:     []Server{},
+		}
 	}
 	
 	// Process changes
 	changes := 0
 	
 	// Add new records
-	for _, server := range config.Servers {
-		if info, shouldBeActive := requestedServers[server.Content]; shouldBeActive {
-			if _, exists := currentRecords[server.Content]; !exists {
-				detail := struct {
-					Message string `json:"message"`
-					Status  string `json:"status"`
-				}{}
+	for key, info := range requestedRecords {
+		if _, exists := currentRecords[key]; !exists {
+			detail := struct {
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			}{}
+			
+			_, err := cfClient.CreateDNSRecord(key.ip, key.name, info.alias, info.proxied, info.ttl)
+			if err != nil {
+				detail.Message = fmt.Sprintf("Failed to activate %s (%s -> %s): %v", key.name, info.alias, key.ip, err)
+				detail.Status = "error"
+			} else {
+				proxyStatus := "DNS-only"
+				if info.proxied {
+					proxyStatus = "proxied"
+				}
+				detail.Message = fmt.Sprintf("✓ Activated %s (%s -> %s) [%s, TTL: %d]", key.name, info.alias, key.ip, proxyStatus, info.ttl)
+				detail.Status = "success"
+				changes++
 				
-				_, err := cfClient.CreateDNSRecord(server.Content, info.alias, info.proxied, info.ttl)
-				if err != nil {
-					detail.Message = fmt.Sprintf("Failed to activate %s (%s): %v", info.alias, server.Content, err)
-					detail.Status = "error"
-				} else {
-					proxyStatus := "DNS-only"
-					if info.proxied {
-						proxyStatus = "proxied"
-					}
-					detail.Message = fmt.Sprintf("✓ Activated %s (%s) [%s, TTL: %d]", info.alias, server.Content, proxyStatus, info.ttl)
-					detail.Status = "success"
-					changes++
-					
-					// Update last activated timestamp
-					for i := range config.Servers {
-						if config.Servers[i].Content == server.Content {
-							config.Servers[i].LastActivatedOn = time.Now().Format(time.RFC3339)
-							break
-						}
+				// Update or add to config
+				found := false
+				for i := range config.Servers {
+					if config.Servers[i].Content == key.ip && config.Servers[i].Name == key.name+"."+credentials.Domain {
+						config.Servers[i].LastActivatedOn = time.Now().Format(time.RFC3339)
+						found = true
+						break
 					}
 				}
-				
-				response.Details = append(response.Details, detail)
+				if !found {
+					// Add new server to config
+					now := time.Now().Format(time.RFC3339)
+					config.Servers = append(config.Servers, Server{
+						Alias:           info.alias,
+						Description:     fmt.Sprintf("Added via web UI on %s", time.Now().Format("2006-01-02")),
+						FirstSeenOn:     now,
+						LastActivatedOn: now,
+						Type:            "A",
+						Name:            key.name + "." + credentials.Domain,
+						Content:         key.ip,
+						TTL:             info.ttl,
+						Proxied:         info.proxied,
+						Comment:         info.alias,
+					})
+				}
 			}
+			
+			response.Details = append(response.Details, detail)
 		}
 	}
 	
 	// Remove records
-	for ip, record := range currentRecords {
-		if _, shouldBeActive := requestedServers[ip]; !shouldBeActive {
+	for key, record := range currentRecords {
+		if _, shouldExist := requestedRecords[key]; !shouldExist {
 			detail := struct {
 				Message string `json:"message"`
 				Status  string `json:"status"`
@@ -1163,10 +1388,10 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 			
 			err := cfClient.DeleteDNSRecord(record.ID)
 			if err != nil {
-				detail.Message = fmt.Sprintf("Failed to deactivate %s (%s): %v", record.Comment, ip, err)
+				detail.Message = fmt.Sprintf("Failed to deactivate %s (%s -> %s): %v", key.name, record.Comment, key.ip, err)
 				detail.Status = "error"
 			} else {
-				detail.Message = fmt.Sprintf("✓ Deactivated %s (%s)", record.Comment, ip)
+				detail.Message = fmt.Sprintf("✓ Deactivated %s (%s -> %s)", key.name, record.Comment, key.ip)
 				detail.Status = "success"
 				changes++
 			}
