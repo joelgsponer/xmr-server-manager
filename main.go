@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -30,10 +32,16 @@ var (
 
 // Configuration structures
 type Server struct {
+	// Unique identifier (persistent)
+	UniqueID        string `json:"unique_id"`                   // Unique hash-based identifier
+	
 	// Custom fields (persistent)
 	Alias           string `json:"alias"`
 	Description     string `json:"description"`
 	Region          string `json:"region,omitempty"`
+	Account         string `json:"account,omitempty"`           // Pool1, Pool2, Pool3, Zgirt, Jetski
+	Container       string `json:"container,omitempty"`         // Group1, Group2, Test
+	Notes           string `json:"notes,omitempty"`             // User editable notes
 	FirstSeenOn     string `json:"first_seen_on,omitempty"`     // When we first discovered this server
 	LastActivatedOn string `json:"last_activated_on,omitempty"` // When it was last activated
 	
@@ -54,10 +62,12 @@ type Server struct {
 }
 
 type ServerConfig struct {
-	Environment string    `json:"environment"`
-	Domain      string    `json:"domain"`
-	LastSync    time.Time `json:"last_sync"`
-	Servers     []Server  `json:"servers"`
+	Environment       string    `json:"environment"`
+	Domain            string    `json:"domain"`
+	LastSync          time.Time `json:"last_sync"`
+	Servers           []Server  `json:"servers"`
+	AvailableAccounts []string  `json:"available_accounts,omitempty"`   // Available account tags
+	AvailableContainers []string `json:"available_containers,omitempty"` // Available container tags
 }
 
 type Credentials struct {
@@ -110,6 +120,13 @@ var (
 	credentials *Credentials
 	configMutex sync.RWMutex
 )
+
+// generateServerID creates a unique identifier for a server based on its DNS name and IP
+func generateServerID(name, ip string) string {
+	data := fmt.Sprintf("%s:%s", name, ip)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:8]) // Use first 8 bytes for a shorter ID
+}
 
 // Logger structure
 type Logger struct {
@@ -227,23 +244,51 @@ const indexHTML = `<!DOCTYPE html>
             align-items: center;
             gap: 10px;
         }
-        .entries-table {
-            width: 100%;
-            font-size: 14px;
+        .entries-container {
+            margin-top: 15px;
         }
-        .entries-table th {
-            text-align: left;
-            padding: 8px 5px;
+        .entry-row {
+            background-color: #f9f9f9;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            padding: 12px;
+            transition: all 0.2s ease;
+        }
+        .entry-row:hover {
+            background-color: #f5f5f5;
+            border-color: #ddd;
+        }
+        .entry-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .entry-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+        .entry-name {
             font-weight: 600;
+            color: #333;
+            min-width: 100px;
+        }
+        .entry-details {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
             color: #666;
-            border-bottom: 1px solid #e0e0e0;
         }
-        .entries-table td {
-            padding: 8px 5px;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        .entries-table tr:last-child td {
-            border-bottom: none;
+        .entry-tags {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
         }
         .entry-checkbox {
             width: 18px;
@@ -337,6 +382,87 @@ const indexHTML = `<!DOCTYPE html>
             font-size: 12px;
             color: #666;
         }
+        .server-notes {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #f0f0f0;
+        }
+        .notes-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .notes-textarea {
+            width: 100%;
+            min-height: 60px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.2s ease;
+        }
+        .notes-textarea:focus {
+            outline: none;
+            border-color: #999;
+        }
+        .tag-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #666;
+            margin-right: 8px;
+            min-width: 70px;
+            display: inline-block;
+        }
+        .tag-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .add-tag-btn {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: 1px solid #ddd;
+            background-color: #f8f8f8;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            color: #666;
+            transition: all 0.2s ease;
+        }
+        .add-tag-btn:hover {
+            background-color: #e8e8e8;
+            border-color: #999;
+            color: #333;
+        }
+        .tag-select {
+            font-size: 12px;
+            padding: 2px 4px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            background-color: white;
+            min-width: 80px;
+        }
+        .tag-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            margin-right: 4px;
+        }
+        .tag-account {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+        .tag-container {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+        }
     </style>
 </head>
 <body>
@@ -367,42 +493,70 @@ const indexHTML = `<!DOCTYPE html>
                     </div>
                 </div>
                 
-                <table class="entries-table">
-                    <thead>
-                        <tr>
-                            <th>DNS Name</th>
-                            <th>Proxy</th>
-                            <th>TTL</th>
-                            <th>Active</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {{range .Entries}}
-                        <tr>
-                            <td>{{.Name}}</td>
-                            <td>
-                                {{if .Proxied}}
-                                    <span class="proxy-badge proxy-on">Proxied</span>
-                                {{else}}
-                                    <span class="proxy-badge proxy-off">DNS only</span>
-                                {{end}}
-                            </td>
-                            <td>{{.TTL}}s</td>
-                            <td>
-                                <input type="checkbox" class="entry-checkbox" 
-                                       name="active" 
-                                       value="{{$.IP}}-{{.Name}}" 
-                                       data-ip="{{$.IP}}"
-                                       data-name="{{.Name}}"
-                                       data-alias="{{.Alias}}"
-                                       data-proxied="{{.Proxied}}"
-                                       data-ttl="{{.TTL}}"
-                                       {{if .IsActive}}checked{{end}}>
-                            </td>
-                        </tr>
-                        {{end}}
-                    </tbody>
-                </table>
+                <div class="entries-container">
+                    {{range .Entries}}
+                    <div class="entry-row">
+                        <div class="entry-main">
+                            <div class="entry-info">
+                                <span class="entry-name">{{.Name}}</span>
+                                <div class="entry-details">
+                                    {{if .Proxied}}
+                                        <span class="proxy-badge proxy-on">Proxied</span>
+                                    {{else}}
+                                        <span class="proxy-badge proxy-off">DNS only</span>
+                                    {{end}}
+                                    <span>TTL: {{.TTL}}s</span>
+                                </div>
+                            </div>
+                            <input type="checkbox" class="entry-checkbox" 
+                                   name="active" 
+                                   value="{{$.IP}}-{{.Name}}" 
+                                   data-ip="{{$.IP}}"
+                                   data-name="{{.Name}}"
+                                   data-alias="{{.Alias}}"
+                                   data-proxied="{{.Proxied}}"
+                                   data-ttl="{{.TTL}}"
+                                   data-account="{{.Account}}"
+                                   data-container="{{.Container}}"
+                                   {{if .IsActive}}checked{{end}}>
+                        </div>
+                        <div class="entry-tags">
+                            <div class="tag-group">
+                                <span class="tag-label">Account:</span>
+                                <select class="tag-select account-select" 
+                                        data-unique-id="{{.UniqueID}}"
+                                        data-ip="{{$.IP}}" 
+                                        data-name="{{.Name}}"
+                                        data-current-value="{{.Account}}"
+                                        onchange="updateTag(this, 'account')">
+                                    <option value="">None</option>
+                                </select>
+                                <button type="button" class="add-tag-btn" onclick="addTag('account')" title="Add new account">+</button>
+                            </div>
+                            <div class="tag-group">
+                                <span class="tag-label">Container:</span>
+                                <select class="tag-select container-select" 
+                                        data-unique-id="{{.UniqueID}}"
+                                        data-ip="{{$.IP}}" 
+                                        data-name="{{.Name}}"
+                                        data-current-value="{{.Container}}"
+                                        onchange="updateTag(this, 'container')">
+                                    <option value="">None</option>
+                                </select>
+                                <button type="button" class="add-tag-btn" onclick="addTag('container')" title="Add new container">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+                
+                <div class="server-notes">
+                    <div class="notes-label">Notes</div>
+                    <textarea class="notes-textarea" 
+                              placeholder="Add notes about this server..."
+                              data-ip="{{.IP}}"
+                              onblur="updateNotes(this)">{{.Notes}}</textarea>
+                </div>
             </div>
             {{end}}
         </div>
@@ -420,6 +574,46 @@ const indexHTML = `<!DOCTYPE html>
     </div>
     
     <script>
+        // Populate tag dropdowns on page load
+        window.onload = function() {
+            const availableAccounts = {{.AvailableAccounts}};
+            const availableContainers = {{.AvailableContainers}};
+            
+            // Populate all account dropdowns
+            const accountSelects = document.querySelectorAll('.account-select');
+            accountSelects.forEach(select => {
+                const currentValue = select.dataset.currentValue;
+                availableAccounts.forEach(account => {
+                    const option = document.createElement('option');
+                    option.value = account;
+                    option.textContent = account;
+                    if (account === currentValue) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+                // Store current value for revert
+                select.dataset.previousValue = currentValue || '';
+            });
+            
+            // Populate all container dropdowns
+            const containerSelects = document.querySelectorAll('.container-select');
+            containerSelects.forEach(select => {
+                const currentValue = select.dataset.currentValue;
+                availableContainers.forEach(container => {
+                    const option = document.createElement('option');
+                    option.value = container;
+                    option.textContent = container;
+                    if (container === currentValue) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+                // Store current value for revert
+                select.dataset.previousValue = currentValue || '';
+            });
+        };
+        
         function confirmProduction() {
             return confirm('⚠️ WARNING: You are about to modify PRODUCTION DNS records. Are you sure?');
         }
@@ -440,13 +634,20 @@ const indexHTML = `<!DOCTYPE html>
             const formData = new FormData(event.target);
             const activeIPs = formData.getAll('active');
             
-            // Build request data with aliases, proxy status, and TTL
+            // Build request data with all fields including tags
             const servers = [];
             document.querySelectorAll('input[name="active"]:checked').forEach(checkbox => {
+                // Find the corresponding select elements in the same entry
+                const entryRow = checkbox.closest('.entry-row');
+                const accountSelect = entryRow.querySelector('.account-select');
+                const containerSelect = entryRow.querySelector('.container-select');
+                
                 servers.push({
                     ip: checkbox.dataset.ip,
                     name: checkbox.dataset.name,
                     alias: checkbox.dataset.alias,
+                    account: accountSelect ? accountSelect.value : '',
+                    container: containerSelect ? containerSelect.value : '',
                     proxied: checkbox.dataset.proxied === 'true',
                     ttl: parseInt(checkbox.dataset.ttl) || 60,
                     active: true
@@ -507,6 +708,109 @@ const indexHTML = `<!DOCTYPE html>
         setInterval(() => {
             document.getElementById('lastUpdate').textContent = new Date().toLocaleString();
         }, 30000);
+        
+        // Function to update tags
+        function updateTag(selectElement, tagType) {
+            const uniqueId = selectElement.dataset.uniqueId;
+            const ip = selectElement.dataset.ip;
+            const name = selectElement.dataset.name;
+            const value = selectElement.value;
+            
+            // Send update to server
+            fetch('/api/update-tag', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    unique_id: uniqueId,
+                    ip: ip,
+                    name: name,
+                    tag_type: tagType,
+                    value: value
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Failed to update tag: ' + data.message);
+                    // Revert the selection on failure
+                    selectElement.value = selectElement.dataset.previousValue || '';
+                }
+            })
+            .catch(error => {
+                alert('Error updating tag: ' + error.message);
+                selectElement.value = selectElement.dataset.previousValue || '';
+            });
+            
+            // Store current value for potential revert
+            selectElement.dataset.previousValue = value;
+        }
+        
+        // Function to update notes
+        function updateNotes(textarea) {
+            const ip = textarea.dataset.ip;
+            const notes = textarea.value;
+            
+            // Send update to server
+            fetch('/api/update-notes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ip: ip,
+                    notes: notes
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    alert('Failed to update notes: ' + data.message);
+                    // Revert the text on failure
+                    textarea.value = textarea.dataset.previousValue || '';
+                }
+            })
+            .catch(error => {
+                alert('Error updating notes: ' + error.message);
+                textarea.value = textarea.dataset.previousValue || '';
+            });
+            
+            // Store current value for potential revert
+            textarea.dataset.previousValue = notes;
+        }
+        
+        // Function to add a new tag
+        function addTag(tagType) {
+            const newTag = prompt('Enter new ' + tagType + ':');
+            if (!newTag || newTag.trim() === '') {
+                return;
+            }
+            
+            // Send request to add new tag
+            fetch('/api/add-tag', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    tag_type: tagType,
+                    tag_name: newTag.trim()
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload the page to show the new tag in all dropdowns
+                    location.reload();
+                } else {
+                    alert('Failed to add tag: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Error adding tag: ' + error.message);
+            });
+        }
     </script>
 </body>
 </html>`
@@ -816,6 +1120,34 @@ func loadServerConfig(env string) (*ServerConfig, error) {
 		return nil, err
 	}
 	
+	// Initialize default available tags if not present
+	if len(config.AvailableAccounts) == 0 {
+		config.AvailableAccounts = []string{"Pool1", "Pool2", "Pool3", "Zgirt", "Jetski"}
+	}
+	if len(config.AvailableContainers) == 0 {
+		config.AvailableContainers = []string{"Group1", "Group2", "Test"}
+	}
+	
+	// Migrate: Add unique IDs to servers that don't have them
+	modified := false
+	for i := range config.Servers {
+		if config.Servers[i].UniqueID == "" {
+			config.Servers[i].UniqueID = generateServerID(config.Servers[i].Name, config.Servers[i].Content)
+			modified = true
+			logger.Log("INFO", fmt.Sprintf("Generated UniqueID for server %s (%s): %s", 
+				config.Servers[i].Name, config.Servers[i].Content, config.Servers[i].UniqueID))
+		}
+	}
+	
+	// Save if we modified the config
+	if modified {
+		if err := saveServerConfig(env, &config); err != nil {
+			logger.Log("WARNING", fmt.Sprintf("Failed to save migrated config: %v", err))
+		} else {
+			logger.Log("INFO", "Saved config with generated unique IDs")
+		}
+	}
+	
 	logger.Log("INFO", fmt.Sprintf("Loaded %d servers from %s", len(config.Servers), configFile))
 	return &config, nil
 }
@@ -1021,6 +1353,9 @@ func importFromCloudflare(env string, records []CloudflareRecord) (*ServerConfig
 		
 		now := time.Now().Format(time.RFC3339)
 		server := Server{
+			// Unique identifier
+			UniqueID:        generateServerID(record.Name, record.Content),
+			
 			// Custom fields
 			Alias:           alias,
 			Description:     fmt.Sprintf("Imported from Cloudflare on %s", time.Now().Format("2006-01-02")),
@@ -1086,6 +1421,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 				Environment: *environment,
 				Domain:      credentials.Domain,
 				Servers:     []Server{},
+				AvailableAccounts: []string{"Pool1", "Pool2", "Pool3", "Zgirt", "Jetski"},
+				AvailableContainers: []string{"Group1", "Group2", "Test"},
 			}
 		}
 	}
@@ -1098,25 +1435,44 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	
 	// Prepare template data
 	type DNSEntry struct {
-		Name     string // The DNS name (e.g., "xmr", "us.xmr")
-		Alias    string // The descriptive alias from config
-		Proxied  bool
-		TTL      int
-		IsActive bool
-		RecordID string
+		UniqueID  string // Unique identifier for this entry
+		Name      string // The DNS name (e.g., "xmr", "us.xmr")
+		Alias     string // The descriptive alias from config
+		Account   string // Account tag
+		Container string // Container tag
+		Proxied   bool
+		TTL       int
+		IsActive  bool
+		RecordID  string
 	}
 	
 	type ServerGroup struct {
 		IP               string
 		Names            string // Concatenated aliases separated by semicolon
+		Notes            string // Editable notes for this server
 		Entries          []DNSEntry
 		HasActiveEntries bool
 	}
 	
-	// First, create a map of all known servers from config indexed by IP
-	configByIP := make(map[string]Server)
+	// First, create a map of all known servers from config indexed by UniqueID
+	configByID := make(map[string]Server)
 	for _, server := range config.Servers {
-		configByIP[server.Content] = server
+		if server.UniqueID != "" {
+			configByID[server.UniqueID] = server
+		}
+	}
+	
+	// Also create a fallback map indexed by IP+Name for servers without UniqueID
+	type serverKey struct {
+		ip   string
+		name string
+	}
+	configByKey := make(map[serverKey]Server)
+	for _, server := range config.Servers {
+		// Extract DNS name for the key
+		dnsName := strings.TrimSuffix(server.Name, "."+credentials.Domain)
+		key := serverKey{ip: server.Content, name: dnsName}
+		configByKey[key] = server
 	}
 	
 	// Group all DNS records by IP address
@@ -1132,6 +1488,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 			serverGroupsMap[ip] = &ServerGroup{
 				IP:      ip,
 				Names:   "",
+				Notes:   "",
 				Entries: []DNSEntry{},
 			}
 		}
@@ -1139,22 +1496,47 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		// Extract the subdomain name (e.g., "xmr" from "xmr.domain.com" or "us.xmr" from "us.xmr.domain.com")
 		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
 		
-		// Get alias from config if available
+		// Generate unique ID for this entry
+		uniqueID := generateServerID(record.Name, ip)
+		
+		// Get alias, account, and container from config if available
 		alias := record.Comment
-		if configServer, exists := configByIP[ip]; exists && configServer.Alias != "" {
-			alias = configServer.Alias
+		account := ""
+		container := ""
+		
+		// First try to find by UniqueID
+		if configServer, exists := configByID[uniqueID]; exists {
+			if configServer.Alias != "" {
+				alias = configServer.Alias
+			}
+			account = configServer.Account
+			container = configServer.Container
+		} else {
+			// Fallback to key-based lookup
+			key := serverKey{ip: ip, name: dnsName}
+			if configServer, exists := configByKey[key]; exists {
+				if configServer.Alias != "" {
+					alias = configServer.Alias
+				}
+				account = configServer.Account
+				container = configServer.Container
+			}
 		}
+		
 		if alias == "" {
 			alias = dnsName
 		}
 		
 		entry := DNSEntry{
-			Name:     dnsName,
-			Alias:    alias,
-			Proxied:  record.Proxied,
-			TTL:      record.TTL,
-			IsActive: true,
-			RecordID: record.ID,
+			UniqueID:  uniqueID,
+			Name:      dnsName,
+			Alias:     alias,
+			Account:   account,
+			Container: container,
+			Proxied:   record.Proxied,
+			TTL:       record.TTL,
+			IsActive:  true,
+			RecordID:  record.ID,
 		}
 		
 		serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
@@ -1166,6 +1548,18 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 			serverGroupsMap[ip].Names = alias
 		} else if !strings.Contains(serverGroupsMap[ip].Names, alias) {
 			serverGroupsMap[ip].Names += "; " + alias
+		}
+		
+		// Get notes from config if available (use the first non-empty notes found)
+		if serverGroupsMap[ip].Notes == "" {
+			if cfgServer, exists := configByID[uniqueID]; exists && cfgServer.Notes != "" {
+				serverGroupsMap[ip].Notes = cfgServer.Notes
+			} else {
+				key := serverKey{ip: ip, name: dnsName}
+				if cfgServer, exists := configByKey[key]; exists && cfgServer.Notes != "" {
+					serverGroupsMap[ip].Notes = cfgServer.Notes
+				}
+			}
 		}
 	}
 	
@@ -1179,8 +1573,12 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 				serverGroupsMap[ip] = &ServerGroup{
 					IP:      ip,
 					Names:   server.Alias,
+					Notes:   server.Notes,
 					Entries: []DNSEntry{},
 				}
+			} else if serverGroupsMap[ip].Notes == "" && server.Notes != "" {
+				// Add notes if not already present
+				serverGroupsMap[ip].Notes = server.Notes
 			}
 			
 			// Extract DNS name
@@ -1189,13 +1587,22 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 				dnsName = "xmr" // Default if no domain match
 			}
 			
+			// Generate unique ID if not present
+			uniqueID := server.UniqueID
+			if uniqueID == "" {
+				uniqueID = generateServerID(server.Name, server.Content)
+			}
+			
 			entry := DNSEntry{
-				Name:     dnsName,
-				Alias:    server.Alias,
-				Proxied:  server.Proxied,
-				TTL:      server.TTL,
-				IsActive: false,
-				RecordID: "",
+				UniqueID:  uniqueID,
+				Name:      dnsName,
+				Alias:     server.Alias,
+				Account:   server.Account,
+				Container: server.Container,
+				Proxied:   server.Proxied,
+				TTL:       server.TTL,
+				IsActive:  false,
+				RecordID:  "",
 			}
 			
 			serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
@@ -1217,13 +1624,15 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	totalServers := len(serverGroupsMap)
 	
 	data := map[string]interface{}{
-		"Environment":   *environment,
-		"Domain":        config.Domain,
-		"ServerGroups":  serverGroups,
-		"TotalServers":  totalServers,
-		"ActiveCount":   activeCount,
-		"InactiveCount": len(config.Servers) - activeCount,
-		"LastUpdate":    time.Now().Format("2006-01-02 15:04:05"),
+		"Environment":        *environment,
+		"Domain":             config.Domain,
+		"ServerGroups":       serverGroups,
+		"TotalServers":       totalServers,
+		"ActiveCount":        activeCount,
+		"InactiveCount":      len(config.Servers) - activeCount,
+		"LastUpdate":         time.Now().Format("2006-01-02 15:04:05"),
+		"AvailableAccounts":  config.AvailableAccounts,
+		"AvailableContainers": config.AvailableContainers,
 	}
 	
 	tmpl := template.Must(template.New("index").Funcs(template.FuncMap{
@@ -1237,12 +1646,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 type UpdateRequest struct {
 	ActiveServers []struct {
-		IP      string `json:"ip"`
-		Name    string `json:"name"`    // DNS name like "xmr" or "us.xmr"
-		Alias   string `json:"alias"`
-		Proxied bool   `json:"proxied"`
-		TTL     int    `json:"ttl"`
-		Active  bool   `json:"active"`
+		IP        string `json:"ip"`
+		Name      string `json:"name"`      // DNS name like "xmr" or "us.xmr"
+		Alias     string `json:"alias"`
+		Account   string `json:"account"`   // Account tag
+		Container string `json:"container"` // Container tag
+		Proxied   bool   `json:"proxied"`
+		TTL       int    `json:"ttl"`
+		Active    bool   `json:"active"`
 	} `json:"active_servers"`
 }
 
@@ -1294,20 +1705,26 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	
 	// Build map of requested records
 	requestedRecords := make(map[recordKey]struct {
-		alias   string
-		proxied bool
-		ttl     int
+		alias     string
+		account   string
+		container string
+		proxied   bool
+		ttl       int
 	})
 	for _, server := range req.ActiveServers {
 		key := recordKey{name: server.Name, ip: server.IP}
 		requestedRecords[key] = struct {
-			alias   string
-			proxied bool
-			ttl     int
+			alias     string
+			account   string
+			container string
+			proxied   bool
+			ttl       int
 		}{
-			alias:   server.Alias,
-			proxied: server.Proxied,
-			ttl:     server.TTL,
+			alias:     server.Alias,
+			account:   server.Account,
+			container: server.Container,
+			proxied:   server.Proxied,
+			ttl:       server.TTL,
 		}
 	}
 	
@@ -1359,13 +1776,17 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 				if !found {
 					// Add new server to config
 					now := time.Now().Format(time.RFC3339)
+					fullName := key.name + "." + credentials.Domain
 					config.Servers = append(config.Servers, Server{
+						UniqueID:        generateServerID(fullName, key.ip),
 						Alias:           info.alias,
+						Account:         info.account,
+						Container:       info.container,
 						Description:     fmt.Sprintf("Added via web UI on %s", time.Now().Format("2006-01-02")),
 						FirstSeenOn:     now,
 						LastActivatedOn: now,
 						Type:            "A",
-						Name:            key.name + "." + credentials.Domain,
+						Name:            fullName,
 						Content:         key.ip,
 						TTL:             info.ttl,
 						Proxied:         info.proxied,
@@ -1434,6 +1855,324 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 var startTime = time.Now()
+
+// Tag update handler
+func updateTagHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		UniqueID string `json:"unique_id"`
+		IP       string `json:"ip"`
+		Name     string `json:"name"`
+		TagType  string `json:"tag_type"`
+		Value    string `json:"value"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	// Load configuration
+	config, err := loadServerConfig(*environment)
+	if err != nil || config == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Failed to load configuration",
+		})
+		return
+	}
+	
+	// Find and update the server
+	found := false
+	
+	// First try to find by UniqueID
+	if req.UniqueID != "" {
+		for i := range config.Servers {
+			if config.Servers[i].UniqueID == req.UniqueID {
+				if req.TagType == "account" {
+					config.Servers[i].Account = req.Value
+				} else if req.TagType == "container" {
+					config.Servers[i].Container = req.Value
+				}
+				found = true
+				logger.Log("INFO", fmt.Sprintf("Found and updated server by UniqueID: %s (%s)", config.Servers[i].Name, req.IP))
+				break
+			}
+		}
+	}
+	
+	// If not found by UniqueID, try fallback method
+	if !found {
+		for i := range config.Servers {
+			// Extract DNS name from full name for comparison
+			serverDNSName := strings.TrimSuffix(config.Servers[i].Name, "."+credentials.Domain)
+			
+			if config.Servers[i].Content == req.IP && serverDNSName == req.Name {
+				// Generate and save UniqueID if missing
+				if config.Servers[i].UniqueID == "" {
+					config.Servers[i].UniqueID = generateServerID(config.Servers[i].Name, config.Servers[i].Content)
+				}
+				
+				if req.TagType == "account" {
+					config.Servers[i].Account = req.Value
+				} else if req.TagType == "container" {
+					config.Servers[i].Container = req.Value
+				}
+				found = true
+				logger.Log("INFO", fmt.Sprintf("Found and updated server by IP+Name: %s (%s)", config.Servers[i].Name, req.IP))
+				break
+			}
+		}
+	}
+	
+	// If not found in config but it's an active DNS record, add it
+	if !found {
+		cfClient := NewCloudflareClient(credentials)
+		records, err := cfClient.GetDNSRecords()
+		if err == nil {
+			for _, record := range records {
+				dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+				if record.Content == req.IP && dnsName == req.Name {
+					// Add to config
+					now := time.Now().Format(time.RFC3339)
+					newServer := Server{
+						UniqueID:        generateServerID(record.Name, record.Content),
+						Alias:           record.Comment,
+						Description:     fmt.Sprintf("Added via tag update on %s", time.Now().Format("2006-01-02")),
+						FirstSeenOn:     now,
+						LastActivatedOn: now,
+						Type:            "A",
+						Name:            record.Name,
+						Content:         record.Content,
+						TTL:             record.TTL,
+						Proxied:         record.Proxied,
+						Comment:         record.Comment,
+					}
+					
+					if req.TagType == "account" {
+						newServer.Account = req.Value
+					} else if req.TagType == "container" {
+						newServer.Container = req.Value
+					}
+					
+					config.Servers = append(config.Servers, newServer)
+					found = true
+					break
+				}
+			}
+		}
+	}
+	
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Server not found",
+		})
+		return
+	}
+	
+	// Save configuration
+	if err := saveServerConfig(*environment, config); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to save configuration: %v", err),
+		})
+		return
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Updated %s tag to '%s' for %s (%s)", req.TagType, req.Value, req.Name, req.IP))
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Tag updated successfully",
+	})
+}
+
+// Notes update handler
+func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		IP    string `json:"ip"`
+		Notes string `json:"notes"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	
+	// Load configuration
+	config, err := loadServerConfig(*environment)
+	if err != nil || config == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Failed to load configuration",
+		})
+		return
+	}
+	
+	// Update notes for all servers with this IP
+	updated := false
+	for i := range config.Servers {
+		if config.Servers[i].Content == req.IP {
+			config.Servers[i].Notes = req.Notes
+			updated = true
+			logger.Log("INFO", fmt.Sprintf("Updated notes for server %s (%s)", config.Servers[i].Name, req.IP))
+		}
+	}
+	
+	if !updated {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "No servers found with this IP",
+		})
+		return
+	}
+	
+	// Save configuration
+	if err := saveServerConfig(*environment, config); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to save configuration: %v", err),
+		})
+		return
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Updated notes for IP %s", req.IP))
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Notes updated successfully",
+	})
+}
+
+// addTagHandler handles adding new tags
+func addTagHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	var req struct {
+		TagType string `json:"tag_type"`
+		TagName string `json:"tag_name"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Invalid request format",
+		})
+		return
+	}
+	
+	// Validate tag type
+	if req.TagType != "account" && req.TagType != "container" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Invalid tag type",
+		})
+		return
+	}
+	
+	// Validate tag name
+	req.TagName = strings.TrimSpace(req.TagName)
+	if req.TagName == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Tag name cannot be empty",
+		})
+		return
+	}
+	
+	// Load current configuration
+	config, err := loadServerConfig(*environment)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to load configuration: %v", err),
+		})
+		return
+	}
+	
+	// Initialize if nil
+	if config == nil {
+		config = &ServerConfig{
+			Environment: *environment,
+			Domain:      credentials.Domain,
+			Servers:     []Server{},
+			AvailableAccounts: []string{},
+			AvailableContainers: []string{},
+		}
+	}
+	
+	// Add the new tag if it doesn't already exist
+	if req.TagType == "account" {
+		// Check if already exists
+		exists := false
+		for _, tag := range config.AvailableAccounts {
+			if tag == req.TagName {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			config.AvailableAccounts = append(config.AvailableAccounts, req.TagName)
+			sort.Strings(config.AvailableAccounts)
+		}
+	} else {
+		// Container
+		exists := false
+		for _, tag := range config.AvailableContainers {
+			if tag == req.TagName {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			config.AvailableContainers = append(config.AvailableContainers, req.TagName)
+			sort.Strings(config.AvailableContainers)
+		}
+	}
+	
+	// Save configuration
+	if err := saveServerConfig(*environment, config); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to save configuration: %v", err),
+		})
+		return
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Added new %s tag: %s", req.TagType, req.TagName))
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Added new %s: %s", req.TagType, req.TagName),
+	})
+}
 
 // openBrowser opens the default browser to the specified URL
 func openBrowser(url string) error {
@@ -1519,6 +2258,9 @@ func main() {
 	// Setup routes
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/api/update", updateHandler)
+	http.HandleFunc("/api/update-tag", updateTagHandler)
+	http.HandleFunc("/api/update-notes", updateNotesHandler)
+	http.HandleFunc("/api/add-tag", addTagHandler)
 	http.HandleFunc("/health", healthHandler)
 	
 	// Start server

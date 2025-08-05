@@ -14,6 +14,11 @@
             "date": 1754320637696,
             "name": "/Users/federerj/Documents/qubic/xmr-server-manager/logs/mcp-puppeteer-2025-08-04.log",
             "hash": "6e32bfb10b5dc5aaa2978853eb248c7a62e59c53454c3bfb93188d235b7e1d22"
+        },
+        {
+            "date": 1754352165702,
+            "name": "/Users/federerj/Documents/qubic/xmr-server-manager/logs/mcp-puppeteer-2025-08-05.log",
+            "hash": "324737d1f6cb150180d21b605549e961da3a9e65858be24b19a4eaf4c7796922"
         }
     ],
     "hashType": "sha256"
