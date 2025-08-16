@@ -673,8 +673,8 @@ const indexHTML = `<!DOCTYPE html>
             <div class="server-card {{if .HasActiveEntries}}active{{end}}" data-name="{{.Name}}">
                 <div class="server-header">
                     <div>
-                        <div class="server-name">{{.Name}}.{{$.Domain}}</div>
-                        <div class="server-ip">{{.Alias}}</div>
+                        <div class="server-name">{{.Alias}}</div>
+                        <div class="server-ip">{{.Name}}</div>
                     </div>
                     <div class="server-status">
                         <span class="status-indicator {{if .HasActiveEntries}}status-active{{else}}status-inactive{{end}}"></span>
@@ -1979,8 +1979,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	for _, record := range records {
 		ip := record.Content
 		
-		// Extract the subdomain name (e.g., "xmr" from "xmr.domain.com")
-		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+		// Use the full domain name as the grouping key
+		dnsName := record.Name
 		
 		// Get or create server group for this NAME
 		if _, exists := serverGroupsMap[dnsName]; !exists {
@@ -2078,11 +2078,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		if _, isActive := activeIPs[server.Content]; !isActive {
 			ip := server.Content
 			
-			// Extract DNS name
-			dnsName := strings.TrimSuffix(server.Name, "."+credentials.Domain)
-			if dnsName == server.Name {
-				dnsName = "xmr" // Default if no domain match
-			}
+			// Use full domain name for consistency
+			dnsName := server.Name
 			
 			// Get or create server group by NAME
 			if _, exists := serverGroupsMap[dnsName]; !exists {
@@ -2801,10 +2798,8 @@ func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
 	
 	// Update notes for all servers with this name
 	updated := false
-	fullName := req.Name + "." + credentials.Domain
 	for i := range config.Servers {
-		serverName := strings.TrimSuffix(config.Servers[i].Name, "."+credentials.Domain)
-		if serverName == req.Name || config.Servers[i].Name == fullName {
+		if config.Servers[i].Name == req.Name {
 			config.Servers[i].Notes = req.Notes
 			updated = true
 			logger.Log("INFO", fmt.Sprintf("Updated notes for server %s", config.Servers[i].Name))
