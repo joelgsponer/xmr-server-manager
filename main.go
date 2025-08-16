@@ -563,6 +563,66 @@ const indexHTML = `<!DOCTYPE html>
             background-color: #ccc;
             cursor: not-allowed;
         }
+        .controls-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .controls-group label {
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .controls-group select,
+        .controls-group input[type="text"] {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 150px;
+        }
+        .controls-group input[type="text"] {
+            width: 200px;
+        }
+        .btn-clear-filters {
+            background-color: #6c757d;
+            color: white;
+            padding: 6px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s ease;
+        }
+        .btn-clear-filters:hover {
+            background-color: #5a6268;
+        }
+        .btn-delete {
+            background-color: #dc3545;
+            color: white;
+            padding: 4px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+            transition: background-color 0.2s ease;
+        }
+        .btn-delete:hover {
+            background-color: #c82333;
+        }
     </style>
 </head>
 <body>
@@ -578,14 +638,43 @@ const indexHTML = `<!DOCTYPE html>
         <strong>Last Updated:</strong> <span id="lastUpdate">{{.LastUpdate}}</span>
     </div>
     
+    <!-- Sorting and Filtering Controls -->
+    <div class="controls-container">
+        <div class="controls-group">
+            <label for="sortBy">Sort by:</label>
+            <select id="sortBy" onchange="applySortingAndFiltering()">
+                <option value="alias-asc">Alias (A-Z)</option>
+                <option value="alias-desc">Alias (Z-A)</option>
+                <option value="date-asc">Date (Oldest First)</option>
+                <option value="date-desc">Date (Newest First)</option>
+                <option value="ip-asc">IP Address (Ascending)</option>
+            </select>
+        </div>
+        <div class="controls-group">
+            <label for="filterName">Filter by alias:</label>
+            <input type="text" id="filterName" placeholder="Enter alias..." onkeyup="applySortingAndFiltering()">
+        </div>
+        <div class="controls-group">
+            <label for="filterState">Show:</label>
+            <select id="filterState" onchange="applySortingAndFiltering()">
+                <option value="all">All Entries</option>
+                <option value="active">Active Only</option>
+                <option value="inactive">Inactive Only</option>
+            </select>
+        </div>
+        <div class="controls-group">
+            <button type="button" class="btn-clear-filters" onclick="clearFilters()">Clear Filters</button>
+        </div>
+    </div>
+    
     <form id="serverForm" onsubmit="updateServers(event)">
         <div class="server-grid">
             {{range .ServerGroups}}
-            <div class="server-card {{if .HasActiveEntries}}active{{end}}">
+            <div class="server-card {{if .HasActiveEntries}}active{{end}}" data-name="{{.Name}}">
                 <div class="server-header">
                     <div>
-                        <div class="server-name">{{.Names}}</div>
-                        <div class="server-ip">{{.IP}}</div>
+                        <div class="server-name">{{.Name}}.{{$.Domain}}</div>
+                        <div class="server-ip">{{.Alias}}</div>
                     </div>
                     <div class="server-status">
                         <span class="status-indicator {{if .HasActiveEntries}}status-active{{else}}status-inactive{{end}}"></span>
@@ -595,10 +684,10 @@ const indexHTML = `<!DOCTYPE html>
                 
                 <div class="entries-container">
                     {{range .Entries}}
-                    <div class="entry-row">
+                    <div class="entry-row" data-name="{{.Name}}" data-alias="{{.Alias}}" data-ip="{{.IP}}" data-created="{{.FirstSeenOn}}" data-active="{{.IsActive}}">
                         <div class="entry-main">
                             <div class="entry-info">
-                                <span class="entry-name">{{.Name}}</span>
+                                <span class="entry-name">{{.IP}} - {{.Alias}}</span>
                                 <div class="entry-details">
                                     {{if .Proxied}}
                                         <span class="proxy-badge proxy-on">Proxied</span>
@@ -608,10 +697,12 @@ const indexHTML = `<!DOCTYPE html>
                                     <span>TTL: {{.TTL}}s</span>
                                 </div>
                             </div>
-                            <input type="checkbox" class="entry-checkbox" 
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <button type="button" class="btn-delete" onclick="deleteDNSEntry('{{.Name}}', '{{.IP}}')">Delete</button>
+                                <input type="checkbox" class="entry-checkbox" 
                                    name="active" 
-                                   value="{{$.IP}}-{{.Name}}" 
-                                   data-ip="{{$.IP}}"
+                                   value="{{.IP}}-{{.Name}}" 
+                                   data-ip="{{.IP}}"
                                    data-name="{{.Name}}"
                                    data-alias="{{.Alias}}"
                                    data-proxied="{{.Proxied}}"
@@ -619,13 +710,14 @@ const indexHTML = `<!DOCTYPE html>
                                    data-account="{{.Account}}"
                                    data-container="{{.Container}}"
                                    {{if .IsActive}}checked{{end}}>
+                            </div>
                         </div>
                         <div class="entry-tags">
                             <div class="tag-group">
                                 <span class="tag-label">Account:</span>
                                 <select class="tag-select account-select" 
                                         data-unique-id="{{.UniqueID}}"
-                                        data-ip="{{$.IP}}" 
+                                        data-ip="{{.IP}}" 
                                         data-name="{{.Name}}"
                                         data-current-value="{{.Account}}"
                                         onchange="updateTag(this, 'account')">
@@ -637,7 +729,7 @@ const indexHTML = `<!DOCTYPE html>
                                 <span class="tag-label">Container:</span>
                                 <select class="tag-select container-select" 
                                         data-unique-id="{{.UniqueID}}"
-                                        data-ip="{{$.IP}}" 
+                                        data-ip="{{.IP}}" 
                                         data-name="{{.Name}}"
                                         data-current-value="{{.Container}}"
                                         onchange="updateTag(this, 'container')">
@@ -654,7 +746,7 @@ const indexHTML = `<!DOCTYPE html>
                     <div class="notes-label">Notes</div>
                     <textarea class="notes-textarea" 
                               placeholder="Add notes about this server..."
-                              data-ip="{{.IP}}"
+                              data-name="{{.Name}}"
                               onblur="updateNotes(this)">{{.Notes}}</textarea>
                 </div>
             </div>
@@ -812,6 +904,150 @@ const indexHTML = `<!DOCTYPE html>
             });
         }
         
+        // Sorting and filtering functions
+        function applySortingAndFiltering() {
+            const sortBy = document.getElementById('sortBy').value;
+            const filterName = document.getElementById('filterName').value.toLowerCase();
+            const filterState = document.getElementById('filterState').value;
+            
+            const serverGrid = document.querySelector('.server-grid');
+            const serverCards = Array.from(document.querySelectorAll('.server-card'));
+            
+            // Process each card for filtering
+            serverCards.forEach(card => {
+                let hasVisibleEntries = false;
+                const entries = Array.from(card.querySelectorAll('.entry-row'));
+                
+                // Filter entries
+                entries.forEach(entry => {
+                    const alias = (entry.dataset.alias || '').toLowerCase();
+                    const isActive = entry.dataset.active === 'true';
+                    
+                    let showEntry = true;
+                    
+                    // Apply alias filter
+                    if (filterName && !alias.includes(filterName)) {
+                        showEntry = false;
+                    }
+                    
+                    // Apply state filter
+                    if (filterState === 'active' && !isActive) {
+                        showEntry = false;
+                    } else if (filterState === 'inactive' && isActive) {
+                        showEntry = false;
+                    }
+                    
+                    entry.style.display = showEntry ? '' : 'none';
+                    if (showEntry) hasVisibleEntries = true;
+                });
+                
+                // Sort entries within the card
+                const visibleEntries = entries.filter(e => e.style.display !== 'none');
+                if (visibleEntries.length > 0) {
+                    const sorted = visibleEntries.sort((a, b) => {
+                        switch(sortBy) {
+                            case 'alias-asc':
+                                return (a.dataset.alias || '').localeCompare(b.dataset.alias || '');
+                            case 'alias-desc':
+                                return (b.dataset.alias || '').localeCompare(a.dataset.alias || '');
+                            case 'date-asc':
+                                return (a.dataset.created || '').localeCompare(b.dataset.created || '');
+                            case 'date-desc':
+                                return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+                            case 'ip-asc':
+                                return compareIPs(a.dataset.ip, b.dataset.ip);
+                            default:
+                                return 0;
+                        }
+                    });
+                    
+                    // Reorder entries in DOM
+                    const container = card.querySelector('.entries-container');
+                    sorted.forEach(entry => container.appendChild(entry));
+                }
+                
+                // Hide card if no visible entries
+                card.style.display = hasVisibleEntries ? '' : 'none';
+            });
+            
+            // Now sort the server cards themselves based on their first visible entry
+            const visibleCards = serverCards.filter(card => card.style.display !== 'none');
+            
+            visibleCards.sort((cardA, cardB) => {
+                // Get first visible entry from each card for comparison
+                const entryA = cardA.querySelector('.entry-row[style=""], .entry-row:not([style*="none"])');
+                const entryB = cardB.querySelector('.entry-row[style=""], .entry-row:not([style*="none"])');
+                
+                if (!entryA || !entryB) return 0;
+                
+                switch(sortBy) {
+                    case 'alias-asc':
+                        return (entryA.dataset.alias || '').localeCompare(entryB.dataset.alias || '');
+                    case 'alias-desc':
+                        return (entryB.dataset.alias || '').localeCompare(entryA.dataset.alias || '');
+                    case 'date-asc':
+                        return (entryA.dataset.created || '').localeCompare(entryB.dataset.created || '');
+                    case 'date-desc':
+                        return (entryB.dataset.created || '').localeCompare(entryA.dataset.created || '');
+                    case 'ip-asc':
+                        return compareIPs(entryA.dataset.ip, entryB.dataset.ip);
+                    default:
+                        return 0;
+                }
+            });
+            
+            // Reorder server cards in the DOM
+            visibleCards.forEach(card => serverGrid.appendChild(card));
+        }
+        
+        function compareIPs(ip1, ip2) {
+            const parts1 = ip1.split('.').map(Number);
+            const parts2 = ip2.split('.').map(Number);
+            for (let i = 0; i < 4; i++) {
+                if (parts1[i] !== parts2[i]) {
+                    return parts1[i] - parts2[i];
+                }
+            }
+            return 0;
+        }
+        
+        function clearFilters() {
+            document.getElementById('sortBy').value = 'alias-asc';
+            document.getElementById('filterName').value = '';
+            document.getElementById('filterState').value = 'all';
+            applySortingAndFiltering();
+        }
+        
+        // Delete DNS entry function
+        async function deleteDNSEntry(name, ip) {
+            const confirmMsg = 'Are you sure you want to delete the DNS entry:\n\n' + name + ' -> ' + ip + '\n\nThis action cannot be undone.';
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/dns/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name, ip })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('DNS entry deleted successfully');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (result.error || 'Failed to delete DNS entry'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
         function confirmProduction() {
             return confirm('⚠️ WARNING: You are about to modify PRODUCTION DNS records. Are you sure?');
         }
@@ -947,7 +1183,7 @@ const indexHTML = `<!DOCTYPE html>
         
         // Function to update notes
         function updateNotes(textarea) {
-            const ip = textarea.dataset.ip;
+            const name = textarea.dataset.name;
             const notes = textarea.value;
             
             // Send update to server
@@ -957,7 +1193,7 @@ const indexHTML = `<!DOCTYPE html>
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    ip: ip,
+                    name: name,
                     notes: notes
                 })
             })
@@ -1692,20 +1928,23 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	
 	// Prepare template data
 	type DNSEntry struct {
-		UniqueID  string // Unique identifier for this entry
-		Name      string // The DNS name (e.g., "xmr", "us.xmr")
-		Alias     string // The descriptive alias from config
-		Account   string // Account tag
-		Container string // Container tag
-		Proxied   bool
-		TTL       int
-		IsActive  bool
-		RecordID  string
+		UniqueID    string // Unique identifier for this entry
+		Name        string // The DNS name (e.g., "xmr", "us.xmr")
+		IP          string // The IP address for this entry
+		Alias       string // The descriptive alias from config
+		Account     string // Account tag
+		Container   string // Container tag
+		Proxied     bool
+		TTL         int
+		IsActive    bool
+		RecordID    string
+		FirstSeenOn string // Creation date for sorting
 	}
 	
 	type ServerGroup struct {
-		IP               string
-		Names            string // Concatenated aliases separated by semicolon
+		Name             string // DNS name (primary grouping key)
+		Alias            string // Display alias for the group
+		IPs              string // Concatenated IPs separated by semicolon
 		Notes            string // Editable notes for this server
 		Entries          []DNSEntry
 		HasActiveEntries bool
@@ -1732,7 +1971,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		configByKey[key] = server
 	}
 	
-	// Group all DNS records by IP address
+	// Group all DNS records by NAME
 	serverGroupsMap := make(map[string]*ServerGroup)
 	activeCount := 0
 	
@@ -1740,18 +1979,19 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	for _, record := range records {
 		ip := record.Content
 		
-		// Get or create server group for this IP
-		if _, exists := serverGroupsMap[ip]; !exists {
-			serverGroupsMap[ip] = &ServerGroup{
-				IP:      ip,
-				Names:   "",
+		// Extract the subdomain name (e.g., "xmr" from "xmr.domain.com")
+		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+		
+		// Get or create server group for this NAME
+		if _, exists := serverGroupsMap[dnsName]; !exists {
+			serverGroupsMap[dnsName] = &ServerGroup{
+				Name:    dnsName,
+				Alias:   "",
+				IPs:     "",
 				Notes:   "",
 				Entries: []DNSEntry{},
 			}
 		}
-		
-		// Extract the subdomain name (e.g., "xmr" from "xmr.domain.com" or "us.xmr" from "us.xmr.domain.com")
-		dnsName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
 		
 		// Generate unique ID for this entry
 		uniqueID := generateServerID(record.Name, ip)
@@ -1784,37 +2024,50 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 			alias = dnsName
 		}
 		
-		entry := DNSEntry{
-			UniqueID:  uniqueID,
-			Name:      dnsName,
-			Alias:     alias,
-			Account:   account,
-			Container: container,
-			Proxied:   record.Proxied,
-			TTL:       record.TTL,
-			IsActive:  true,
-			RecordID:  record.ID,
+		// Get FirstSeenOn from config if available
+		firstSeenOn := ""
+		if configServer, exists := configByID[uniqueID]; exists {
+			firstSeenOn = configServer.FirstSeenOn
 		}
 		
-		serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
-		serverGroupsMap[ip].HasActiveEntries = true
+		entry := DNSEntry{
+			UniqueID:    uniqueID,
+			Name:        dnsName,
+			IP:          ip,
+			Alias:       alias,
+			Account:     account,
+			Container:   container,
+			Proxied:     record.Proxied,
+			TTL:         record.TTL,
+			IsActive:    true,
+			RecordID:    record.ID,
+			FirstSeenOn: firstSeenOn,
+		}
+		
+		serverGroupsMap[dnsName].Entries = append(serverGroupsMap[dnsName].Entries, entry)
+		serverGroupsMap[dnsName].HasActiveEntries = true
 		activeCount++
 		
-		// Add alias to the group's name list
-		if serverGroupsMap[ip].Names == "" {
-			serverGroupsMap[ip].Names = alias
-		} else if !strings.Contains(serverGroupsMap[ip].Names, alias) {
-			serverGroupsMap[ip].Names += "; " + alias
+		// Set or update the group's alias
+		if serverGroupsMap[dnsName].Alias == "" {
+			serverGroupsMap[dnsName].Alias = alias
+		}
+		
+		// Add IP to the group's IP list
+		if serverGroupsMap[dnsName].IPs == "" {
+			serverGroupsMap[dnsName].IPs = ip
+		} else if !strings.Contains(serverGroupsMap[dnsName].IPs, ip) {
+			serverGroupsMap[dnsName].IPs += ", " + ip
 		}
 		
 		// Get notes from config if available (use the first non-empty notes found)
-		if serverGroupsMap[ip].Notes == "" {
+		if serverGroupsMap[dnsName].Notes == "" {
 			if cfgServer, exists := configByID[uniqueID]; exists && cfgServer.Notes != "" {
-				serverGroupsMap[ip].Notes = cfgServer.Notes
+				serverGroupsMap[dnsName].Notes = cfgServer.Notes
 			} else {
 				key := serverKey{ip: ip, name: dnsName}
 				if cfgServer, exists := configByKey[key]; exists && cfgServer.Notes != "" {
-					serverGroupsMap[ip].Notes = cfgServer.Notes
+					serverGroupsMap[dnsName].Notes = cfgServer.Notes
 				}
 			}
 		}
@@ -1825,23 +2078,34 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		if _, isActive := activeIPs[server.Content]; !isActive {
 			ip := server.Content
 			
-			// Get or create server group
-			if _, exists := serverGroupsMap[ip]; !exists {
-				serverGroupsMap[ip] = &ServerGroup{
-					IP:      ip,
-					Names:   server.Alias,
-					Notes:   server.Notes,
-					Entries: []DNSEntry{},
-				}
-			} else if serverGroupsMap[ip].Notes == "" && server.Notes != "" {
-				// Add notes if not already present
-				serverGroupsMap[ip].Notes = server.Notes
-			}
-			
 			// Extract DNS name
 			dnsName := strings.TrimSuffix(server.Name, "."+credentials.Domain)
 			if dnsName == server.Name {
 				dnsName = "xmr" // Default if no domain match
+			}
+			
+			// Get or create server group by NAME
+			if _, exists := serverGroupsMap[dnsName]; !exists {
+				serverGroupsMap[dnsName] = &ServerGroup{
+					Name:    dnsName,
+					Alias:   server.Alias,
+					IPs:     ip,
+					Notes:   server.Notes,
+					Entries: []DNSEntry{},
+				}
+			} else {
+				// Add IP if not already present
+				if !strings.Contains(serverGroupsMap[dnsName].IPs, ip) {
+					if serverGroupsMap[dnsName].IPs == "" {
+						serverGroupsMap[dnsName].IPs = ip
+					} else {
+						serverGroupsMap[dnsName].IPs += ", " + ip
+					}
+				}
+				// Add notes if not already present
+				if serverGroupsMap[dnsName].Notes == "" && server.Notes != "" {
+					serverGroupsMap[dnsName].Notes = server.Notes
+				}
 			}
 			
 			// Generate unique ID if not present
@@ -1851,18 +2115,20 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			
 			entry := DNSEntry{
-				UniqueID:  uniqueID,
-				Name:      dnsName,
-				Alias:     server.Alias,
-				Account:   server.Account,
-				Container: server.Container,
-				Proxied:   server.Proxied,
-				TTL:       server.TTL,
-				IsActive:  false,
-				RecordID:  "",
+				UniqueID:    uniqueID,
+				Name:        dnsName,
+				IP:          ip,
+				Alias:       server.Alias,
+				Account:     server.Account,
+				Container:   server.Container,
+				Proxied:     server.Proxied,
+				TTL:         server.TTL,
+				IsActive:    false,
+				RecordID:    "",
+				FirstSeenOn: server.FirstSeenOn,
 			}
 			
-			serverGroupsMap[ip].Entries = append(serverGroupsMap[ip].Entries, entry)
+			serverGroupsMap[dnsName].Entries = append(serverGroupsMap[dnsName].Entries, entry)
 		}
 	}
 	
@@ -1872,13 +2138,23 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		serverGroups = append(serverGroups, *group)
 	}
 	
-	// Sort server groups by IP address
+	// Sort server groups by Name
 	sort.Slice(serverGroups, func(i, j int) bool {
-		return serverGroups[i].IP < serverGroups[j].IP
+		return serverGroups[i].Name < serverGroups[j].Name
 	})
 	
 	// Count total unique servers (by IP)
 	totalServers := len(serverGroupsMap)
+	
+	// Count total entries and inactive entries
+	totalEntries := 0
+	for _, group := range serverGroups {
+		totalEntries += len(group.Entries)
+	}
+	inactiveCount := totalEntries - activeCount
+	if inactiveCount < 0 {
+		inactiveCount = 0
+	}
 	
 	data := map[string]interface{}{
 		"Environment":        *environment,
@@ -1886,7 +2162,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		"ServerGroups":       serverGroups,
 		"TotalServers":       totalServers,
 		"ActiveCount":        activeCount,
-		"InactiveCount":      len(config.Servers) - activeCount,
+		"InactiveCount":      inactiveCount,
 		"LastUpdate":         time.Now().Format("2006-01-02 15:04:05"),
 		"AvailableAccounts":  config.AvailableAccounts,
 		"AvailableContainers": config.AvailableContainers,
@@ -2234,6 +2510,127 @@ func createDNSHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// deleteDNSHandler handles deleting DNS entries
+func deleteDNSHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	// Parse request body
+	var req struct {
+		Name string `json:"name"`
+		IP   string `json:"ip"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid request body",
+		})
+		return
+	}
+	
+	// Validate inputs
+	if req.Name == "" || req.IP == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Name and IP are required",
+		})
+		return
+	}
+	
+	// Create Cloudflare client
+	cfClient := NewCloudflareClient(credentials)
+	
+	// Get all DNS records to find the one to delete
+	records, err := cfClient.GetDNSRecords()
+	if err != nil {
+		logger.Log("ERROR", fmt.Sprintf("Failed to fetch DNS records: %v", err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to fetch DNS records",
+		})
+		return
+	}
+	
+	// Find the record to delete
+	var recordToDelete *CloudflareRecord
+	fullName := req.Name
+	if !strings.HasSuffix(req.Name, credentials.Domain) {
+		fullName = req.Name + "." + credentials.Domain
+	}
+	
+	for _, record := range records {
+		if record.Name == fullName && record.Content == req.IP {
+			recordToDelete = &record
+			break
+		}
+	}
+	
+	if recordToDelete == nil {
+		// Also try without domain suffix
+		shortName := strings.TrimSuffix(req.Name, "."+credentials.Domain)
+		for _, record := range records {
+			recordName := strings.TrimSuffix(record.Name, "."+credentials.Domain)
+			if recordName == shortName && record.Content == req.IP {
+				recordToDelete = &record
+				break
+			}
+		}
+	}
+	
+	if recordToDelete == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "DNS record not found",
+		})
+		return
+	}
+	
+	// Delete the DNS record
+	if err := cfClient.DeleteDNSRecord(recordToDelete.ID); err != nil {
+		logger.Log("ERROR", fmt.Sprintf("Failed to delete DNS record: %v", err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to delete DNS record: %v", err),
+		})
+		return
+	}
+	
+	// Update server config - remove or mark as inactive
+	config, err := loadServerConfig(*environment)
+	if err == nil && config != nil {
+		// Find and remove the server from config
+		for i, server := range config.Servers {
+			if server.Name == fullName && server.Content == req.IP {
+				// Remove the server from the slice
+				config.Servers = append(config.Servers[:i], config.Servers[i+1:]...)
+				break
+			}
+		}
+		
+		// Save updated config
+		if err := saveServerConfig(*environment, config); err != nil {
+			logger.Log("WARNING", fmt.Sprintf("DNS record deleted but failed to update config: %v", err))
+		}
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Deleted DNS record: %s -> %s", req.Name, req.IP))
+	
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("DNS record deleted successfully: %s -> %s", req.Name, req.IP),
+	})
+}
+
 // Tag update handler
 func updateTagHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -2382,7 +2779,7 @@ func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	var req struct {
-		IP    string `json:"ip"`
+		Name  string `json:"name"`  // Now grouped by name instead of IP
 		Notes string `json:"notes"`
 	}
 	
@@ -2402,13 +2799,15 @@ func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Update notes for all servers with this IP
+	// Update notes for all servers with this name
 	updated := false
+	fullName := req.Name + "." + credentials.Domain
 	for i := range config.Servers {
-		if config.Servers[i].Content == req.IP {
+		serverName := strings.TrimSuffix(config.Servers[i].Name, "."+credentials.Domain)
+		if serverName == req.Name || config.Servers[i].Name == fullName {
 			config.Servers[i].Notes = req.Notes
 			updated = true
-			logger.Log("INFO", fmt.Sprintf("Updated notes for server %s (%s)", config.Servers[i].Name, req.IP))
+			logger.Log("INFO", fmt.Sprintf("Updated notes for server %s", config.Servers[i].Name))
 		}
 	}
 	
@@ -2416,7 +2815,7 @@ func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"message": "No servers found with this IP",
+			"message": "No servers found with this name",
 		})
 		return
 	}
@@ -2431,7 +2830,7 @@ func updateNotesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	logger.Log("INFO", fmt.Sprintf("Updated notes for IP %s", req.IP))
+	logger.Log("INFO", fmt.Sprintf("Updated notes for name %s", req.Name))
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2640,6 +3039,7 @@ func main() {
 	http.HandleFunc("/api/update-notes", updateNotesHandler)
 	http.HandleFunc("/api/add-tag", addTagHandler)
 	http.HandleFunc("/api/dns/create", createDNSHandler)
+	http.HandleFunc("/api/dns/delete", deleteDNSHandler)
 	http.HandleFunc("/health", healthHandler)
 	
 	// Start server
