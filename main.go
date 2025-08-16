@@ -202,42 +202,62 @@ const indexHTML = `<!DOCTYPE html>
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .server-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
             margin-bottom: 20px;
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
         }
         .server-card {
             background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             padding: 20px;
-            transition: box-shadow 0.3s ease;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
         }
         .server-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
         .server-card.active {
-            border: 2px solid {{if eq .Environment "production"}}#dc3545{{else}}#fd7e14{{end}};
+            border: 2px solid #28a745;
+            background-color: #f0fff4;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
         }
         .server-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #f0f0f0;
+        }
+        .server-card.active .server-header {
+            border-bottom-color: #28a745;
         }
         .server-name {
-            font-size: 18px;
+            font-size: 20px;
             font-weight: bold;
             color: #333;
         }
+        .server-card.active .server-name {
+            color: #28a745;
+        }
         .server-ip {
-            font-size: 14px;
+            font-size: 16px;
             color: #666;
-            font-weight: normal;
-            margin-top: 2px;
+            font-weight: 500;
+            margin-top: 4px;
+            background-color: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .server-card.active .server-ip {
+            background-color: #d4edda;
+            color: #155724;
         }
         .server-status {
             display: flex;
@@ -249,15 +269,21 @@ const indexHTML = `<!DOCTYPE html>
         }
         .entry-row {
             background-color: #f9f9f9;
-            border: 1px solid #e8e8e8;
+            border: 2px solid #e8e8e8;
             border-radius: 6px;
-            margin-bottom: 8px;
-            padding: 12px;
+            margin-bottom: 10px;
+            padding: 15px;
             transition: all 0.2s ease;
+            position: relative;
         }
         .entry-row:hover {
             background-color: #f5f5f5;
             border-color: #ddd;
+        }
+        .entry-row.active {
+            border-color: #28a745;
+            background-color: #e7f5e7;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.15);
         }
         .entry-main {
             display: flex;
@@ -463,6 +489,80 @@ const indexHTML = `<!DOCTYPE html>
             background-color: #f3e5f5;
             color: #7b1fa2;
         }
+        .dns-form-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .dns-form-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .dns-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .form-input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: {{if eq .Environment "production"}}#dc3545{{else}}#fd7e14{{end}};
+        }
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .form-checkbox input {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .btn-add-dns {
+            background-color: {{if eq .Environment "production"}}#dc3545{{else}}#fd7e14{{end}};
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+        .btn-add-dns:hover {
+            background-color: {{if eq .Environment "production"}}#c82333{{else}}#e96810{{end}};
+        }
+        .btn-add-dns:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -566,6 +666,46 @@ const indexHTML = `<!DOCTYPE html>
         </button>
     </form>
     
+    <!-- Add DNS Entry Form -->
+    <div class="dns-form-container">
+        <div class="dns-form-title">Add New DNS Entry</div>
+        <form id="addDnsForm" class="dns-form" onsubmit="addDNSEntry(event)">
+            <div class="form-group">
+                <label for="newDnsName">DNS Name:</label>
+                <input type="text" id="newDnsName" name="name" required 
+                       placeholder="e.g., server1 or us.server1"
+                       pattern="[a-zA-Z0-9\-\.]+"
+                       title="Only letters, numbers, dots and hyphens allowed">
+            </div>
+            <div class="form-group">
+                <label for="newDnsIP">IP Address:</label>
+                <input type="text" id="newDnsIP" name="ip" required 
+                       placeholder="e.g., 192.168.1.1"
+                       pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                       title="Please enter a valid IP address">
+            </div>
+            <div class="form-group">
+                <label for="newDnsAlias">Alias (Optional):</label>
+                <input type="text" id="newDnsAlias" name="alias" 
+                       placeholder="Friendly name">
+            </div>
+            <div class="form-group">
+                <label for="newDnsTTL">TTL (seconds):</label>
+                <input type="number" id="newDnsTTL" name="ttl" 
+                       value="60" min="60" max="86400">
+            </div>
+            <div class="form-group">
+                <label for="newDnsProxied">
+                    <input type="checkbox" id="newDnsProxied" name="proxied">
+                    Proxied through Cloudflare
+                </label>
+            </div>
+            <div class="form-group" style="grid-column: 1 / -1;">
+                <button type="submit" class="btn-add-dns">Add DNS Entry</button>
+            </div>
+        </form>
+    </div>
+    
     <div id="status" class="status"></div>
     
     <div id="operationLog" style="margin-top: 20px; display: none;">
@@ -578,6 +718,22 @@ const indexHTML = `<!DOCTYPE html>
         window.onload = function() {
             const availableAccounts = {{.AvailableAccounts}};
             const availableContainers = {{.AvailableContainers}};
+            
+            // Add event listeners to checkboxes to update visual state
+            const checkboxes = document.querySelectorAll('.entry-checkbox');
+            checkboxes.forEach(checkbox => {
+                // Set initial state
+                updateEntryVisualState(checkbox);
+                
+                // Add change listener
+                checkbox.addEventListener('change', function() {
+                    updateEntryVisualState(this);
+                    updateServerCardState(this);
+                });
+            });
+            
+            // Update server card states on load
+            updateAllServerCardStates();
             
             // Populate all account dropdowns
             const accountSelects = document.querySelectorAll('.account-select');
@@ -613,6 +769,48 @@ const indexHTML = `<!DOCTYPE html>
                 select.dataset.previousValue = currentValue || '';
             });
         };
+        
+        // Function to update entry row visual state
+        function updateEntryVisualState(checkbox) {
+            const entryRow = checkbox.closest('.entry-row');
+            if (entryRow) {
+                if (checkbox.checked) {
+                    entryRow.classList.add('active');
+                } else {
+                    entryRow.classList.remove('active');
+                }
+            }
+        }
+        
+        // Function to update server card state based on its entries
+        function updateServerCardState(checkbox) {
+            const serverCard = checkbox.closest('.server-card');
+            if (serverCard) {
+                const allCheckboxes = serverCard.querySelectorAll('.entry-checkbox');
+                const hasActive = Array.from(allCheckboxes).some(cb => cb.checked);
+                
+                if (hasActive) {
+                    serverCard.classList.add('active');
+                } else {
+                    serverCard.classList.remove('active');
+                }
+            }
+        }
+        
+        // Function to update all server card states
+        function updateAllServerCardStates() {
+            const serverCards = document.querySelectorAll('.server-card');
+            serverCards.forEach(card => {
+                const allCheckboxes = card.querySelectorAll('.entry-checkbox');
+                const hasActive = Array.from(allCheckboxes).some(cb => cb.checked);
+                
+                if (hasActive) {
+                    card.classList.add('active');
+                } else {
+                    card.classList.remove('active');
+                }
+            });
+        }
         
         function confirmProduction() {
             return confirm('⚠️ WARNING: You are about to modify PRODUCTION DNS records. Are you sure?');
@@ -810,6 +1008,65 @@ const indexHTML = `<!DOCTYPE html>
             .catch(error => {
                 alert('Error adding tag: ' + error.message);
             });
+        }
+        
+        // Function to add DNS entry
+        async function addDNSEntry(event) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            const dnsEntry = {
+                name: formData.get('name'),
+                ip: formData.get('ip'),
+                alias: formData.get('alias') || formData.get('name'),
+                ttl: parseInt(formData.get('ttl')) || 60,
+                proxied: formData.get('proxied') === 'on'
+            };
+            
+            // Show loading state
+            const submitBtn = form.querySelector('.btn-add-dns');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Adding...';
+            
+            // Show status
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                const response = await fetch('/api/dns/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(dnsEntry)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = 'DNS entry added successfully! Refreshing...';
+                    statusDiv.style.color = 'green';
+                    statusDiv.style.display = 'block';
+                    form.reset();
+                    // Reload page to show new entry
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    statusDiv.textContent = 'Error: ' + (result.error || 'Failed to add DNS entry');
+                    statusDiv.style.color = 'red';
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.textContent = 'Error: ' + error.message;
+                statusDiv.style.color = 'red';
+                statusDiv.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
         }
     </script>
 </body>
@@ -1856,6 +2113,127 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 var startTime = time.Now()
 
+// createDNSHandler handles creating new DNS entries
+func createDNSHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	
+	// Parse request body
+	var req struct {
+		Name    string `json:"name"`
+		IP      string `json:"ip"`
+		Alias   string `json:"alias"`
+		TTL     int    `json:"ttl"`
+		Proxied bool   `json:"proxied"`
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid request body",
+		})
+		return
+	}
+	
+	// Validate inputs
+	if req.Name == "" || req.IP == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Name and IP are required",
+		})
+		return
+	}
+	
+	// Set default TTL if not provided
+	if req.TTL <= 0 {
+		req.TTL = 60
+	}
+	
+	// Set alias to name if not provided
+	if req.Alias == "" {
+		req.Alias = req.Name
+	}
+	
+	// Create Cloudflare client
+	cfClient := NewCloudflareClient(credentials)
+	
+	// Create DNS record
+	recordID, err := cfClient.CreateDNSRecord(req.IP, req.Name, req.Alias, req.Proxied, req.TTL)
+	if err != nil {
+		logger.Log("ERROR", fmt.Sprintf("Failed to create DNS record: %v", err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to create DNS record: %v", err),
+		})
+		return
+	}
+	
+	// Update server config
+	config, err := loadServerConfig(*environment)
+	if err != nil {
+		// Create new config if it doesn't exist
+		config = &ServerConfig{
+			Environment: *environment,
+			Domain:      credentials.Domain,
+			Servers:     []Server{},
+		}
+	}
+	
+	// Add new server to config
+	fullName := req.Name
+	if !strings.Contains(req.Name, ".") {
+		fullName = req.Name + "." + credentials.Domain
+	} else if !strings.HasSuffix(req.Name, credentials.Domain) {
+		fullName = req.Name + "." + credentials.Domain
+	}
+	
+	now := time.Now().Format(time.RFC3339)
+	newServer := Server{
+		UniqueID:        generateServerID(fullName, req.IP),
+		Alias:           req.Alias,
+		Type:            "A",
+		Name:            fullName,
+		Content:         req.IP,
+		TTL:             req.TTL,
+		Proxied:         req.Proxied,
+		FirstSeenOn:     now,
+		LastActivatedOn: now,
+	}
+	
+	// Check if server already exists in config
+	found := false
+	for i, server := range config.Servers {
+		if server.UniqueID == newServer.UniqueID {
+			config.Servers[i].LastActivatedOn = now
+			found = true
+			break
+		}
+	}
+	
+	if !found {
+		config.Servers = append(config.Servers, newServer)
+	}
+	
+	// Save updated config
+	if err := saveServerConfig(*environment, config); err != nil {
+		logger.Log("WARNING", fmt.Sprintf("DNS record created but failed to save config: %v", err))
+	}
+	
+	logger.Log("INFO", fmt.Sprintf("Created DNS record: %s -> %s (ID: %s)", req.Name, req.IP, recordID))
+	
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("DNS record created successfully: %s -> %s", req.Name, req.IP),
+		"id":      recordID,
+	})
+}
+
 // Tag update handler
 func updateTagHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -2261,6 +2639,7 @@ func main() {
 	http.HandleFunc("/api/update-tag", updateTagHandler)
 	http.HandleFunc("/api/update-notes", updateNotesHandler)
 	http.HandleFunc("/api/add-tag", addTagHandler)
+	http.HandleFunc("/api/dns/create", createDNSHandler)
 	http.HandleFunc("/health", healthHandler)
 	
 	// Start server
