@@ -673,8 +673,8 @@ const indexHTML = `<!DOCTYPE html>
             <div class="server-card {{if .HasActiveEntries}}active{{end}}" data-name="{{.Name}}">
                 <div class="server-header">
                     <div>
-                        <div class="server-name">{{.Alias}}</div>
-                        <div class="server-ip">{{.Name}}</div>
+                        <div class="server-name">{{.Name}}</div>
+                        <div class="server-ip">{{len .Entries}} DNS {{if eq (len .Entries) 1}}entry{{else}}entries{{end}}</div>
                     </div>
                     <div class="server-status">
                         <span class="status-indicator {{if .HasActiveEntries}}status-active{{else}}status-inactive{{end}}"></span>
